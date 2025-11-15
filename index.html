@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Temporizador</title>
+<style>
+:root{--bg:#000;--text:#fff}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Arial,Helvetica,sans-serif}
+.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:28px}
+.controls{display:flex;gap:8px;align-items:center}
+input[type=number], input[type=text]{width:110px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.02);color:var(--text);outline:none}
+button{padding:10px 14px;border-radius:10px;border:none;background:rgba(255,255,255,0.06);color:var(--text);cursor:pointer}
+button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+.ring-wrap{display:flex;flex-direction:column;align-items:center;gap:12px}
+.ring{width:160px;height:160px;display:grid;place-items:center;transform: scaleX(-1);}
+svg{transform: rotate(-90deg);}
+circle{fill:none;stroke-width:12;}
+.track{stroke:rgba(255,255,255,0.06);}
+.foreground{opacity:1;transition:stroke 0.1s linear, opacity 0.2s;}
+.transition-overlay{position:absolute;top:0;left:0;width:100%;height:100%;transform: scaleX(1);}
+.list{display:flex;gap:8px;flex-wrap:wrap;max-width:520px}
+.chip{padding:8px 12px;border-radius:999px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;}
+.small{font-size:13px;color:rgba(255,255,255,0.7)}
+.ring-container{position:relative;width:160px;height:160px;}
+.no-fade{transition:none !important;}
+
+.chip-btn {
+  margin-left: 8px;
+  cursor: pointer;
+  color: rgba(255,255,255,0.6);
+  font-weight: bold;
+  transition: 0.15s;
+}
+.chip-btn:hover {
+  color: #fff;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2 style="margin:0">Temporizador</h2>
+  <div class="controls">
+    <label class="small" for="minutes">Tiempo</label>
+
+    <input id="minutes" type="text" placeholder="ej. m5, h1, s30" />
+
+    <button id="addBtn">Añadir</button>
+    <button id="startBtn">START</button>
+    <button id="repeatBtn">Repetir</button>
+    <button id="resetBtn" class="secondary">Reset</button>
+  </div>
+
+  <div class="list" id="timersList" aria-live="polite"></div>
+
+  <div class="ring-wrap">
+    <div class="ring-container">
+      <div class="ring">
+        <svg viewBox="0 0 128 128" width="100%" height="100%">
+          <circle class="track" cx="64" cy="64" r="54"></circle>
+          <circle class="foreground" cx="64" cy="64" r="54"></circle>
+        </svg>
+      </div>
+      <div class="transition-overlay" style="pointer-events:none;">
+        <svg viewBox="0 0 128 128" width="100%" height="100%">
+          <circle class="track" cx="64" cy="64" r="54"></circle>
+          <circle class="foreground" cx="64" cy="64" r="54"></circle>
+        </svg>
+      </div>
+    </div>
+    <div class="small" id="timeLabel">Añade tiempos y pulsa START<br><br>
+    
+    <a href="https://oracleapi.netlify.app">Powered by Oracle</a></div>
+  </div>
+</div>
+
+<script>
+const MAX_TIMERS = 5;
+const timerColors = ['#ff4d4f','#22c55e','#1e90ff','rainbow','#ffffff'];
+const minutesInput = document.getElementById('minutes');
+const addBtn = document.getElementById('addBtn');
+const startBtn = document.getElementById('startBtn');
+const repeatBtn = document.getElementById('repeatBtn');
+const resetBtn = document.getElementById('resetBtn');
+const timersList = document.getElementById('timersList');
+const timeLabel = document.getElementById('timeLabel');
+
+const fg = document.querySelector('.ring svg .foreground');
+const fgTransition = document.querySelector('.transition-overlay svg .foreground');
+
+const R = 54;
+const C = 2 * Math.PI * R;
+
+let timers = [], running=false, currentIndex=-1;
+let rafTimer=null, rafTransition=null;
+let A=0,B=0;
+let skipNextFadeIn = false;
+
+function easeInOutCubic(t){ return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2; }
+function rainbowColor(t){ return `hsl(${(t*360)%360},100%,50%)`; }
+
+function updateStroke(){ fg.setAttribute('stroke-dasharray',`${A} ${C-A}`); fg.setAttribute('stroke-dashoffset',0); fg.setAttribute('stroke-linecap', A===0 ? 'butt' : 'round'); }
+function updateTransition(){ fgTransition.setAttribute('stroke-dasharray',`${B} ${C-B}`); fgTransition.setAttribute('stroke-dashoffset',0); fgTransition.setAttribute('stroke-linecap', B===0 ? 'butt' : 'round'); }
+
+/* ---------------------------
+   renderList() con botón X
+---------------------------- */
+function renderList(){
+  timersList.innerHTML='';
+  if(timers.length===0){ 
+    A=B=0; 
+    updateStroke(); updateTransition(); 
+    const hint=document.createElement('div'); 
+    hint.className='small'; 
+    hint.textContent='No hay temporizadores.'; 
+    timersList.appendChild(hint); 
+    return; 
+  }
+
+  timers.forEach((s,i)=>{ 
+    const chip=document.createElement('div'); 
+    chip.className='chip';
+
+    const text=document.createElement('span');
+    text.textContent=`#${i+1} — ${formatDuration(s)}`;
+
+    const btn=document.createElement('span');
+    btn.className='chip-btn';
+    btn.textContent='×';
+    btn.title='Eliminar este temporizador';
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      timers.splice(i,1);
+      currentIndex = timers.length - 1;
+      renderList();
+    });
+
+    chip.appendChild(text);
+    chip.appendChild(btn);
+    timersList.appendChild(chip);
+  });
+}
+
+/* ---------------------------
+   addTimer() con prefijo
+---------------------------- */
+function addTimer() {
+  const raw = minutesInput.value.trim().toLowerCase();
+
+  if (!raw) {
+    alert("Debes usar un prefijo: s, m, h, d, a.\nEj: s30, m5, h1, d2");
+    minutesInput.focus();
+    return;
+  }
+
+  const match = raw.match(/^([smhda])(\d+(\.\d+)?)$/);
+
+  if (!match) {
+    alert("Formato incorrecto. Ejemplos válidos: s30, m5, h1, d2, a1");
+    minutesInput.focus();
+    return;
+  }
+
+  const prefix = match[1];
+  const value = parseFloat(match[2]);
+  if (value <= 0) {
+    alert("El valor debe ser mayor a 0.");
+    return;
+  }
+
+  let seconds = 0;
+  switch (prefix) {
+    case 's': seconds = value; break;
+    case 'm': seconds = value * 60; break;
+    case 'h': seconds = value * 3600; break;
+    case 'd': seconds = value * 86400; break;
+    case 'a': seconds = value * 31557600; break;
+  }
+
+  if (timers.length >= MAX_TIMERS) {
+    alert('Solo se pueden añadir hasta 5 temporizadores.');
+    return;
+  }
+
+  timers.push(Math.round(seconds));
+  minutesInput.value = '';
+  renderList();
+
+  if (!running) currentIndex = timers.length - 1;
+}
+
+addBtn.addEventListener('click',addTimer);
+minutesInput.addEventListener('keydown',e=>{if(e.key==='Enter') addTimer();});
+
+/* ----------------------------------
+   Sistema de animación
+----------------------------------- */
+
+function fadeOutRings(duration=500){
+  return new Promise(resolve=>{
+    fg.style.transition = `opacity ${duration}ms`;
+    fgTransition.style.transition = `opacity ${duration}ms`;
+    fg.style.opacity = 0;
+    fgTransition.style.opacity = 0;
+    setTimeout(resolve,duration);
+  });
+}
+
+resetBtn.addEventListener('click', async () => {
+  stopAll();
+  await fadeOutRings();
+  A = B = 0;
+  fg.style.stroke = fgTransition.style.stroke = '#000';
+  fg.style.opacity = 1;
+  fgTransition.style.opacity = 1;
+  updateStroke();
+  updateTransition();
+  timeLabel.textContent = 'Listo';
+  currentIndex = timers.length - 1;
+});
+
+startBtn.addEventListener('click',()=>{
+  if(running||timers.length===0){ if(timers.length===0) alert('Añade al menos un temporizador.'); return; }
+  running=true; if(currentIndex<0) currentIndex=timers.length-1;
+
+  if(!skipNextFadeIn){ 
+    fg.style.opacity=0; fgTransition.style.opacity=0; 
+    fg.style.transition='opacity 0.5s'; fgTransition.style.transition='opacity 0.5s'; 
+    requestAnimationFrame(()=>{ fg.style.opacity=1; fgTransition.style.opacity=1; });
+  }
+  skipNextFadeIn=false;
+  startNextTimer();
+});
+
+repeatBtn.addEventListener('click',()=>{
+  if(currentIndex<0||timers.length===0) return;
+  stopAll();
+  skipNextFadeIn=true;
+  const currentProg=A/C;
+  B=0; updateTransition();
+  const t0=performance.now();
+  function tick(now){ 
+    const elapsed=now-t0; 
+    const prog=Math.min(elapsed/500,1); 
+    A=C*currentProg+(C*(1-currentProg))*prog; 
+    updateStroke(); 
+    if(prog<1) requestAnimationFrame(tick); 
+  }
+  requestAnimationFrame(tick);
+});
+
+function stopAll(){ 
+  running=false; 
+  if(rafTimer) cancelAnimationFrame(rafTimer); 
+  if(rafTransition) cancelAnimationFrame(rafTransition); 
+  rafTimer=rafTransition=null; 
+}
+
+async function startNextTimer(){
+  if(currentIndex<0){ 
+    A=B=0; 
+    fg.style.stroke=fgTransition.style.stroke='#000'; 
+    updateStroke(); updateTransition(); 
+    timeLabel.textContent='Finalizado'; 
+    running=false;
+
+    fg.style.transition='opacity 0.5s'; 
+    fgTransition.style.transition='opacity 0.5s';
+    fg.style.opacity=fgTransition.style.opacity=0;
+
+    return; 
+  }
+
+  let color=timerColors[currentIndex%timerColors.length];
+  if(color==='rainbow') color='#fff';
+
+  fg.classList.add('no-fade'); 
+  fgTransition.classList.add('no-fade');
+  fg.style.stroke=color; 
+  A=C; B=0; 
+  updateStroke(); updateTransition();
+
+  await new Promise(r=>requestAnimationFrame(r));
+  fg.classList.remove('no-fade'); 
+  fgTransition.classList.remove('no-fade');
+
+  startCountdown(timers[currentIndex],currentIndex).then(async()=>{
+    const next=currentIndex-1;
+    await transitionB(500,next);
+    currentIndex--;
+    startNextTimer();
+  });
+}
+
+function startCountdown(secTotal,index){
+  return new Promise(resolve=>{
+    const t0=performance.now();
+    function tick(ts){
+      if(!running) return;
+      const elapsed=(ts-t0)/1000;
+      const prog=Math.min(elapsed/secTotal,1);
+      A=C*(1-prog);
+      updateStroke();
+      const rem=Math.max(0,Math.ceil(secTotal-elapsed));
+      timeLabel.textContent=`#${index+1} — ${formatTime(rem)}`;
+
+      if(index===0 && secTotal-elapsed<=1){ 
+        fg.style.transition='opacity 1s'; 
+        fg.style.opacity=0; 
+      }
+
+      if(prog<1) rafTimer=requestAnimationFrame(tick); 
+      else { rafTimer=null; resolve(); }
+    }
+    rafTimer=requestAnimationFrame(tick);
+  });
+}
+
+function transitionB(duration=500,nextIndex=0){ 
+  return new Promise(resolve=>{ 
+    if(nextIndex<0){ resolve(); return; } 
+    const t0=performance.now(); 
+    function tick(now){ 
+      const elapsed=now-t0; 
+      const prog=Math.min(elapsed/duration,1); 
+      B=C*easeInOutCubic(prog); 
+      let color=timerColors[nextIndex%timerColors.length]; 
+      if(color==='rainbow') color=rainbowColor(performance.now()/3000); 
+      fgTransition.style.stroke=color; 
+      updateTransition(); 
+      if(prog<1) rafTransition=requestAnimationFrame(tick); 
+      else{ B=0; updateTransition(); rafTransition=null; resolve(); } 
+    } 
+    rafTransition=requestAnimationFrame(tick); 
+  }); 
+}
+
+function formatTime(s){ 
+  const m=Math.floor(s/60); 
+  const sec=s%60; 
+  return `${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`; 
+}
+
+function formatDuration(s){ 
+  const year = 31557600;
+  const day  = 86400;
+  const hour = 3600;
+  const min  = 60;
+
+  if (s >= year) {
+    const x = Math.floor(s / year);
+    return `${x} año${x !== 1 ? 's' : ''}`;
+  }
+  if (s >= day) {
+    const x = Math.floor(s / day);
+    return `${x} día${x !== 1 ? 's' : ''}`;
+  }
+  if (s >= hour) {
+    const x = Math.floor(s / hour);
+    return `${x} hora${x !== 1 ? 's' : ''}`;
+  }
+  if (s >= min) {
+    const x = Math.floor(s / min);
+    return `${x} minuto${x !== 1 ? 's' : ''}`;
+  }
+  return `${s} segundo${s !== 1 ? 's' : ''}`;
+}
+
+function animateRainbow(){ 
+  if(currentIndex>=0&&timerColors[currentIndex%timerColors.length]==='rainbow'){ 
+    fg.style.stroke=rainbowColor(performance.now()/3000); 
+  } 
+  requestAnimationFrame(animateRainbow); 
+}
+animateRainbow();
+
+renderList(); updateStroke(); updateTransition();
+</script>
+</body>
+</html>
