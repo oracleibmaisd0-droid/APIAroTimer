@@ -378,5 +378,94 @@ animateRainbow();
 
 renderList(); updateStroke(); updateTransition();
 </script>
+
+
+<script type="module">
+import {
+  glass,
+  attachPress
+} from "https://cdn.jsdelivr.net/npm/glassy-liquid@0.1.0/+esm";
+
+// Evita aplicar el efecto más de una vez al mismo elemento.
+const elementosGlass = new WeakSet();
+
+function aplicarGlass(elemento, opciones, interactivo = false) {
+  if (elementosGlass.has(elemento)) return;
+
+  elementosGlass.add(elemento);
+
+  const superficie = glass(elemento, opciones);
+
+  if (interactivo) {
+    attachPress(elemento, superficie);
+  }
+}
+
+// Botones principales.
+document.querySelectorAll("button").forEach(elemento => {
+  aplicarGlass(elemento, {
+    radius: 10,
+    material: "clear",
+    appearance: "dark",
+    refraction: 18
+  }, true);
+});
+
+// Campo de entrada.
+document.querySelectorAll("#minutes").forEach(elemento => {
+  aplicarGlass(elemento, {
+    radius: 10,
+    material: "clear",
+    appearance: "dark",
+    refraction: 18
+  });
+});
+
+// Botones de eliminar.
+document.querySelectorAll(".chip-btn").forEach(elemento => {
+  aplicarGlass(elemento, {
+    radius: "circle",
+    material: "clear",
+    appearance: "dark",
+    refraction: 18
+  }, true);
+});
+
+// Temporizadores creados dinámicamente.
+function aplicarGlassChips(contenedor) {
+  contenedor.querySelectorAll(".chip").forEach(elemento => {
+    aplicarGlass(elemento, {
+      radius: "capsule",
+      material: "clear",
+      appearance: "dark",
+      refraction: 18
+    });
+  });
+
+  contenedor.querySelectorAll(".chip-btn").forEach(elemento => {
+    aplicarGlass(elemento, {
+      radius: "circle",
+      material: "clear",
+      appearance: "dark",
+      refraction: 18
+    }, true);
+  });
+}
+
+const lista = document.getElementById("timersList");
+
+aplicarGlassChips(lista);
+
+const observador = new MutationObserver(() => {
+  aplicarGlassChips(lista);
+});
+
+observador.observe(lista, {
+  childList: true,
+  subtree: true
+});
+</script>
+
+
 </body>
 </html>
