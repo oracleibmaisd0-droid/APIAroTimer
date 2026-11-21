@@ -37,6 +37,14 @@ circle{fill:none;stroke-width:12;}
 .chip-btn:hover {
   color: #fff;
 }
+
+glass-button{
+  touch-action: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
 </style>
 </head>
 <body>
@@ -47,10 +55,10 @@ circle{fill:none;stroke-width:12;}
 
     <input id="minutes" type="text" placeholder="ej. m5, h1, s30" />
 
-    <button id="addBtn">Añadir</button>
-    <button id="startBtn">START</button>
-    <button id="repeatBtn">Repetir</button>
-    <button id="resetBtn" class="secondary">Reset</button>
+    <glass-button id="addBtn" material="clear"><span>Añadir</span></glass-button>
+    <glass-button id="startBtn" material="clear"><span>START</span></glass-button>
+    <glass-button id="repeatBtn" material="clear"><span>Repetir</span></glass-button>
+    <glass-button id="resetBtn" class="secondary" material="clear"><span>Reset</span></glass-button>
   </div>
 
   <div class="list" id="timersList" aria-live="polite"></div>
@@ -466,6 +474,10 @@ observador.observe(lista, {
 });
 </script>
 
+<script
+  type="module"
+  src="https://cdn.jsdelivr.net/npm/glassy-liquid@0.1/dist/glassy-liquid.min.js">
+</script>
 
 </body>
 </html>
